@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-# 打开视频文件或摄像头
+# 打开视频文件
 cap = cv2.VideoCapture('your_video.mp4')  # 替换为你的视频路径，
 
 # 设置每个“字符块”的大小
