@@ -1,76 +1,90 @@
-import random
-import time
-from playwright.sync_api import sync_playwright
+import cv2
+import numpy as np
 
-user_agents = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36",
-    # 其他 User-Agent
-]
+# 打开视频文件或摄像头
+cap = cv2.VideoCapture('your_video.mp4')  # 替换为你的视频路径，或者使用摄像头 cap = cv2.VideoCapture(0)
 
-def main():
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context(user_agent=random.choice(user_agents))
+# 设置每个“字符块”的大小
+block_size = 10  # 字符块的大小
+font_scale = 0.4  # 字体大小
+font = cv2.FONT_HERSHEY_SIMPLEX  # 字体样式
 
-        # 手动添加有效的 Cookies
-        context.add_cookies([{
-            'name': 'cookie_name',
-            'value': 'cookie_value',
-            'domain': '.sunsetbot.top',  # 使用正确的域名
-            'path': '/'                   # 使用根路径
-        }])
+# 获取视频的宽高并转换为整数
+original_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+original_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+fps = int(cap.get(cv2.CAP_PROP_FPS))  # 获取帧率
 
-        page = context.new_page()
+# 定义用于保存视频的 VideoWriter，输出为 .mp4 格式
+output_filename = 'output_video_with_saturation_and_full_resolution.mp4'
+fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 设置编码器为 MP4
+out = cv2.VideoWriter(output_filename, fourcc, fps, (original_width, original_height))
 
-        try:
-            page.goto("https://sunsetbot.top/")
-            print("当前页面URL:", page.url)
-            page.wait_for_load_state("networkidle")  # 等待网络空闲
-            time.sleep(random.uniform(2, 5))  # 随机延迟
+# 创建全屏窗口
+cv2.namedWindow('Color-Based Binary Text Display', cv2.WND_PROP_FULLSCREEN)
+cv2.setWindowProperty('Color-Based Binary Text Display', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
-            if "404" in page.url:
-                print("页面未找到（404）。请检查 URL。")
-            else:
-                print("页面加载完成，当前URL:", page.url)
+# 调整饱和度的参数，值越高饱和度越强，默认是1.0
+saturation_factor = 2  # 你可以调整这个值来增强饱和度
 
-                # 模拟输入城市
-                city_input = page.wait_for_selector("#city_input")
-                city_input.fill("上海")
-                time.sleep(random.uniform(1, 3))
+while True:
+    ret, frame = cap.read()  # 读取视频帧
+    if not ret:
+        break
 
-                # 模拟选择事件
-                event_selector = page.wait_for_selector("#event_selector")
-                event_selector.fill("今天日落")
-                time.sleep(random.uniform(1, 3))
+    # 增强颜色的饱和度
+    hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-                # 点击搜索按钮
-                srch_btn = page.wait_for_selector("#srch_btn")
-                srch_btn.click()
-                time.sleep(5)  # 等待数据加载
+    # 提高饱和度通道值，通过saturation_factor进行放大
+    s_channel = hsv_frame[:, :, 1].astype(np.float32)
+    s_channel = s_channel * saturation_factor
+    s_channel = np.clip(s_channel, 0, 255).astype(np.uint8)
+    hsv_frame[:, :, 1] = s_channel
 
-                # 获取数据
-                table = page.wait_for_selector("#xsection_fcst_tbody")
-                rows = table.query_selector_all("tr")
+    # 将HSV转回BGR
+    saturated_frame = cv2.cvtColor(hsv_frame, cv2.COLOR_HSV2BGR)
 
-                for row in rows:
-                    cells = row.query_selector_all("td")
-                    if len(cells) > 0:
-                        event_time = cells[0].inner_text().strip()
-                        quality = cells[1].inner_text().strip()
-                        aod = cells[2].inner_text().strip()
-                        uncertainty = cells[3].inner_text().strip()
+    # 获取原始帧的宽高（不再缩小尺寸）
+    height, width = saturated_frame.shape[:2]
 
-                        print(f"Event Time: {event_time}")
-                        print(f"Quality: {quality}")
-                        print(f"AOD: {aod}")
-                        print(f"Uncertainty: {uncertainty}")
-                        print("-" * 40)
+    # 转为灰度图像以计算亮度
+    gray = cv2.cvtColor(saturated_frame, cv2.COLOR_BGR2GRAY)
 
-        except Exception as e:
-            print("发生错误:", e)
+    # 创建一个空白画布用于显示字符
+    canvas = np.ones((height, width, 3), dtype=np.uint8) * 180
 
-        finally:
-            browser.close()
+    # 使用 NumPy 矩阵操作加速计算平均颜色和亮度
+    for y in range(0, height, block_size):
+        for x in range(0, width, block_size):
+            # 获取每个 block_size x block_size 的像素块
+            block = saturated_frame[y:y + block_size, x:x + block_size]
 
-if __name__ == "__main__":
-    main()
+            # 确保中心像素的计算不超出边界
+            center_y = min(y + block_size // 2, height - 1)
+            center_x = min(x + block_size // 2, width - 1)
+
+            fg_color = saturated_frame[center_y, center_x]
+
+            # 获取该块的平均亮度
+            avg_brightness = np.mean(gray[y:y + block_size, x:x + block_size])
+
+            # 根据平均亮度决定是 0 还是 1
+            char = '1' if avg_brightness > 128 else '0'
+
+            # 绘制字符
+            text_position = (x, y + block_size - 2)  # 调整字符的位置
+            cv2.putText(canvas, char, text_position, font, font_scale, fg_color.tolist(), 1, cv2.LINE_AA)
+
+    # 在窗口中显示带有字符的画布
+    cv2.imshow('Color-Based Binary Text Display', canvas)
+
+    # 将带有字符的帧写入视频
+    out.write(canvas)
+
+    # 按下 'q' 键退出
+    if cv2.waitKey(1) & 0xFF == ord('q'):  # 使用 1 ms 延迟提高帧率
+        break
+
+# 释放资源
+cap.release()
+out.release()  # 关闭 VideoWriter
+cv2.destroyAllWindows()
