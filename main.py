@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 
 # 打开视频文件或摄像头
-cap = cv2.VideoCapture('your_video.mp4')  # 替换为你的视频路径，或者使用摄像头 cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture('your_video.mp4')  # 替换为你的视频路径，
 
 # 设置每个“字符块”的大小
 block_size = 10  # 字符块的大小
@@ -81,7 +81,7 @@ while True:
     out.write(canvas)
 
     # 按下 'q' 键退出
-    if cv2.waitKey(1) & 0xFF == ord('q'):  # 使用 1 ms 延迟提高帧率
+    if cv2.waitKey(1) & 0xFF == ord('q'): 
         break
 
 # 释放资源
